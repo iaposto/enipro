@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# PLINK binary files
+*.bed
+*.bim
+*.fam
+*.nosex
+
+# Results and data (live in projects/ dir, not repo)
+results/
+logs/
+data/
+
+# Environment
+.env
+*.egg-info/
+.vscode/
+
