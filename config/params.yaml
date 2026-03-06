@@ -1,0 +1,62 @@
+# enipro Phase 1 configuration — Goat SNP genotyping QC + PCA
+
+# --- Paths ---
+project_dir: /home/i/iapostof/projects/enipro
+input_prefix: /home/i/iapostof/projects/enipro/test_data/graega_top_alleles/graega_top_alleles
+results_dir: /home/i/iapostof/projects/enipro/results
+log_dir: /home/i/iapostof/projects/enipro/logs
+
+# --- Species ---
+chr_set: 29           # goat autosomes
+autosomes: "1-29"
+
+# --- QC thresholds ---
+qc:
+  geno: 0.10          # max per-SNP missing rate
+  mind: 0.10          # max per-sample missing rate
+  maf: 0.01           # min minor allele frequency
+  hwe: 1e-6           # HWE p-value threshold
+  king_cutoff: 0.177  # KING kinship (1st-degree relatives)
+
+# --- LD pruning ---
+ld_prune:
+  window: 50
+  step: 5
+  r2: 0.2
+
+# --- PCA ---
+pca:
+  n_pcs: 20
+
+# --- Breed metadata ---
+breeds:
+  ANG:
+    color: "#e41a1c"
+    label: Anglonubian
+  ARI:
+    color: "#377eb8"
+    label: Aridaias
+  BHA:
+    color: "#4daf4a"
+    label: Black Halkidikis
+  CRO:
+    color: "#984ea3"
+    label: Crossbreed
+  DAM:
+    color: "#ff7f00"
+    label: Damaskou
+  IND:
+    color: "#a65628"
+    label: Indigenous
+  MUR:
+    color: "#f781bf"
+    label: Murcia
+  PAG:
+    color: "#999999"
+    label: Paggaiou
+  SER:
+    color: "#66c2a5"
+    label: Serres
+  SKO:
+    color: "#ffd92f"
+    label: Skopelou
