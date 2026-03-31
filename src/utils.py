@@ -62,3 +62,14 @@ def read_vmiss(path: str | Path) -> pd.DataFrame:
 def read_freq(path: str | Path) -> pd.DataFrame:
     """Parse PLINK2 .afreq file."""
     return pd.read_csv(path, sep="\t", dtype={"#CHROM": str})
+
+
+def read_fst_summary(path: str | Path) -> pd.DataFrame:
+    """Parse PLINK2 .fst.summary output."""
+    df = pd.read_csv(
+        path,
+        sep="\t",
+        dtype={"#POP1": str, "POP1": str, "POP2": str},
+    )
+    df.rename(columns=lambda col: col.lstrip("#"), inplace=True)
+    return df

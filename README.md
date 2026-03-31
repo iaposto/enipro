@@ -1,6 +1,6 @@
 # enipro
 
-Bioinformatics pipeline for sheep/goat SNP genotyping analysis, supporting genetic diversity assessment, population structure characterization.
+Bioinformatics pipeline for sheep/goat SNP genotyping analysis, supporting genetic diversity assessment, population structure characterization, and ROH-based genomic inbreeding analysis.
 
 ## Dataset
 
@@ -28,17 +28,20 @@ This installs:
 | Tool | Purpose |
 |---|---|
 | **plink2** (v2.0) | Primary tool for QC filtering, LD pruning, PCA, allele frequencies |
-| **plink** (v1.9) | Heterozygosity and inbreeding coefficient (`--het`) | # Issues with plink2 when using --het.
+| **plink** (v1.9) | Heterozygosity and inbreeding coefficient (`--het`); used because `plink2 --het` was unreliable here |
 | **Python 3.11** | Data processing, visualization, reporting |
+| **R** | ROH detection with `detectRUNS` |
+| **detectRUNS** | Sliding-window ROH calling and ROH-derived summaries |
 | pandas, numpy, matplotlib, seaborn, scipy, pyyaml | Python analysis stack |
 
-**Note:** The install command requires `--channel-priority flexible` to resolve cross-channel dependencies between bioconda (plink) and conda-forge (Python).
+**Note:** The install command requires `--channel-priority flexible` to resolve cross-channel dependencies between bioconda (plink) and conda-forge (Python/R). `detectRUNS` is installed from CRAN into the same `enipro` environment after the conda packages are resolved.
 
 ### Tool choices
 
 - **PLINK 2.0:** PLINK 2.0 handles all QC operations and has a purpose-built `--pca` command.
 - **PLINK2 `--pca`:** PLINK2 `--pca` computes eigenvectors/eigenvalues.
-- **R not used in Phase 1.** For now, all visualization is handled by Python (matplotlib + seaborn). R may be introduced in later phases for specialized packages (e.g., `detectRUNS` for ROH analysis).
+- **R + detectRUNS:** ROH detection uses the CRAN `detectRUNS` package because it provides a well-established sliding-window implementation and direct ROH summaries from PLINK PED/MAP input.
+- **Python visualization:** PCA, QC, and ROH figures are still generated in Python so the plotting style remains consistent across the project.
 
 ## Pipeline
 
@@ -58,10 +61,22 @@ Or via Make:
 micromamba run -n enipro make all
 ```
 
+ROH analysis:
+
+```bash
+micromamba run -n enipro make roh
+```
+
 Individual steps can be run independently:
 
 ```bash
 micromamba run -n enipro bash scripts/01_pre_qc_filter.sh
+```
+
+The ROH workflow is self-contained and can also be run directly:
+
+```bash
+micromamba run -n enipro bash scripts/08_roh.sh
 ```
 
 ### Step 0 — Pre-QC filter (`01_pre_qc_filter.sh`)
@@ -69,7 +84,7 @@ micromamba run -n enipro bash scripts/01_pre_qc_filter.sh
 Filters the raw dataset to retain only autosomal, biallelic SNPs with standard ACGT alleles.
 
 ```
-plink2 --bfile <input> --chr-set 29 --chr 1-29 --snps-only just-acgt --max-alleles 2 --make-bed
+plink2 --bfile <input> --chr-set 29 no-xy --chr 1-29 --snps-only just-acgt --max-alleles 2 --make-bed
 ```
 
 **What is removed:**
@@ -89,13 +104,13 @@ plink2 --bfile <input> --chr-set 29 --chr 1-29 --snps-only just-acgt --max-allel
 Applies per-variant quality filters.
 
 ```
-plink2 --chr-set 29 --geno 0.10 --maf 0.01 --hwe 1e-6 --make-bed
+plink2 --chr-set 29 no-xy --geno 0.10 --maf 0.02 --hwe 1e-6 --make-bed
 ```
 
 | Filter | Threshold | Rationale |
 |---|---|---|
 | `--geno 0.10` | Remove SNPs with >10% missing genotypes | Standard call rate threshold (90%) |
-| `--maf 0.01` | Remove SNPs with minor allele frequency <1% | Low-MAF variants add noise to PCA and inflate LD estimates. |
+| `--maf 0.02` | Remove SNPs with minor allele frequency <2% | Low-MAF variants add noise to PCA and inflate LD estimates. |
 | `--hwe 1e-6` | Remove SNPs with Hardy-Weinberg exact test p < 1e-6 | Lenient threshold. |
 
 **Output:** `results/qc/step1_snp_qc/graega_snpqc.{bed,bim,fam}`
@@ -122,8 +137,6 @@ plink2 --extract ld_prune.prune.in --king-cutoff 0.177  # KING kinship
 ```
 
 **LD pruning** is performed first (window=50 SNPs, step=5, r²=0.2).
-
-**KING kinship** is used instead of PLINK's IBD-based `--genome` because KING is robust to population structure. "In a multi-breed dataset, IBD estimates are inflated by shared ancestry between breeds, leading to false positives. KING correctly handles this."
 
 | KING kinship | Relationship |
 |---|---|
@@ -185,6 +198,132 @@ PLINK2 `--pca` is used.
 | `results/pca/eigenvec_eigenval/graega_pca.eigenvec` | Tab-separated file: FID, IID, PC1–PC20 |
 | `results/pca/eigenvec_eigenval/graega_pca.eigenval` | One eigenvalue per line (20 values) |
 
+### Step 7 — ADMIXTURE (`07_admixture.sh`)
+
+Model-based ancestry estimation run on an **external HPC cluster** (not part of `run_all.sh`). The input is the LD-pruned binary dataset saved by Step 5b.
+
+**Input:** `results/pca/pruned_snps/graega_ldpruned.{bed,bim,fam}` — copy these to the HPC working directory alongside `07_admixture.sh`.
+
+```bash
+# Submitted via SLURM
+sbatch scripts/07_admixture.sh
+```
+
+The script runs K=2–30 sequentially, each with 10-fold cross-validation:
+
+```bash
+admixture --cv=10 -j16 -s 42 graega_ldpruned.bed $K | tee log${K}.out
+```
+
+| Parameter | Value | Rationale |
+|---|---|---|
+| `--cv=10` | 10-fold cross-validation | More precise CV error estimate than default 5-fold |
+| `-j16` | 16 threads | Conservative on shared HPC node (64 CPUs available) |
+| `-s 42` | Fixed random seed | Reproducibility |
+| K=2–30 | Range covers all plausible structures | CV curve identifies the optimal K |
+
+**Optimal K:** determined by the lowest CV error. For the GRAEGA dataset K=7 (CV=0.628), reflecting that the 10 named breeds cluster into 7 genetically distinct ancestral groups (MUR and ANG are each highly distinct; ARI splits into two sub-clusters; BHA/IND/PAG/SER/CRO seem to share a common Greek mainland component; SKO has its own island-derived component).
+
+**Outputs** (copy back from HPC to `results/<RUN_STAMP>/admixture/`):
+
+| File | Content |
+|---|---|
+| `graega_ldpruned.{K}.Q` | Ancestry proportions per individual (267 rows × K columns) |
+| `graega_ldpruned.{K}.P` | Ancestral allele frequencies per SNP (45,192 rows × K columns) |
+| `log{K}.out` | ADMIXTURE log including CV error for each K |
+| `provenance.txt` | Records which pipeline run's pruned files were used as input |
+
+### Downstream pairwise FST (`09_fst.sh`)
+
+Runs pairwise breed-level FST directly on the **LD-pruned PLINK dataset** from Step 5b, using PLINK 2's `--fst` implementation with the **Weir-Cockerham** estimator.
+
+This step reuses the breed codes already stored in the `.fam` **FID** column:
+
+```bash
+plink2 \
+  --bfile results/<RUN_STAMP>/pca/pruned_snps/graega_ldpruned \
+  --family BREED \
+  --fst BREED method=wc blocksize=100 \
+  --out results/<RUN_STAMP>/fst/graega_ldpruned_fst_wc
+```
+
+PLINK 2 documents that `--family` treats FID as a categorical phenotype, while `--fst` writes pairwise population results to `.fst.summary`.
+
+Run it on an existing pipeline output by setting the run stamp explicitly:
+
+```bash
+RUN_STAMP=<RUN_STAMP> micromamba run -n enipro bash scripts/09_fst.sh
+```
+
+**Outputs:**
+
+| File | Content |
+|---|---|
+| `results/<RUN_STAMP>/fst/graega_ldpruned_fst_wc.fst.summary` | Pairwise breed FST table with the two population IDs, `WC_FST`, and `SE` |
+| `results/<RUN_STAMP>/fst/graega_ldpruned_fst_wc.matrix.tsv` | Symmetric FST distance matrix derived from the summary table |
+| `results/<RUN_STAMP>/figures/fst/fst_distance_matrix.{png,pdf}` | Clustered heatmap with dendrograms for the pairwise FST matrix |
+
+### Step 8 — ROH detection (`08_roh.sh`)
+
+Runs of homozygosity are called with the CRAN `detectRUNS` package using the **sliding-window** method.
+
+The ROH input follows the same overall QC logic as the main pipeline, but **skips MAF filtering and skips LD pruning in the final ROH dataset**. The ROH-specific preparation path is:
+
+1. autosomal, biallelic, ACGT SNP filter
+2. SNP QC with `--geno 0.10` and `--hwe 1e-6` only
+3. sample QC with `--mind 0.10`
+4. KING relatedness filtering, where LD pruning is used only to estimate kinship and choose samples to remove
+5. export the final unpruned ROH dataset to PLINK PED/MAP for `detectRUNS`
+
+This preserves the requested SNP set for ROH calling while still applying the non-MAF QC filters and relatedness filter.
+
+The sliding-window ROH parameters are:
+
+| Parameter | Value |
+|---|---|
+| Minimum ROH length | 1 Mb |
+| Minimum SNPs per ROH | 50 |
+| Minimum density | 1 SNP / 70 kb |
+| Window size | 50 SNPs |
+| Maximum gap between consecutive SNPs | 100 kb |
+| Maximum missing SNPs per window / per ROH | 5 |
+| Maximum heterozygous SNPs per window / per ROH | 1 |
+| Window threshold | 0.05 |
+
+Equivalent `detectRUNS::slidingRUNS.run()` settings:
+
+```r
+windowSize   = 50
+threshold    = 0.05
+minSNP       = 50
+maxGap       = 100000
+minLengthBps = 1000000
+minDensity   = 1 / 70000
+maxMissWindow = 5
+maxMissRun    = 5
+maxOppWindow  = 1
+maxOppRun     = 1
+```
+
+**FROH** is calculated as:
+
+```text
+FROH = ΣLROH / Laut
+```
+
+where `ΣLROH` is the total ROH length per individual and `Laut` is the autosomal array length estimated from the maximum mapped position on each autosome in the autosomal step-0 SNP map. This keeps the denominator tied to the genotyping array rather than to the ROH calls themselves.
+
+**Outputs:**
+
+| File | Content |
+|---|---|
+| `results/<RUN_STAMP>/roh/input/graega_roh_input.{bed,bim,fam,ped,map}` | Final ROH input dataset after non-MAF QC + relatedness filtering |
+| `results/<RUN_STAMP>/roh/runs/roh_runs.tsv` | One row per detected ROH segment |
+| `results/<RUN_STAMP>/roh/stats/froh_per_individual.tsv` | Per-individual total ROH length and `FROH` |
+| `results/<RUN_STAMP>/roh/stats/autosomal_genome_length_by_chr.tsv` | Per-chromosome contribution to `Laut` |
+| `results/<RUN_STAMP>/roh/stats/roh_length_class_per_individual.tsv` | ROH counts and total length in the three length classes |
+| `results/<RUN_STAMP>/roh/stats/roh_summary.txt` | Text summary of run counts and `FROH` |
+
 ### QC report (`src/qc_report.py`)
 
 Parses all QC statistics and produces a text summary and diagnostic plots:
@@ -204,6 +343,38 @@ micromamba run -n enipro python src/qc_report.py
 | `inbreeding_by_breed.{png,pdf}` | Boxplot of inbreeding coefficient *F* per breed |
 
 The text report prints() variant/sample counts at each QC step, per-breed sample sizes, and per-breed heterozygosity summaries.
+
+### ADMIXTURE visualization (`src/plot_admixture.py`)
+
+Produces CV error and Q-matrix plots from the ADMIXTURE output:
+
+```bash
+ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
+  micromamba run -n enipro python src/plot_admixture.py
+```
+
+**Figures generated** (in `results/figures/admixture/`):
+
+| File | Description |
+|---|---|
+| `admixture_cv_error.png` | CV error vs K (K=2–30), red dashed line at optimal K |
+| `admixture_K{K}.png` | Stacked bar chart of ancestry proportions for one K value, samples sorted by breed |
+| `admixture_panel.png` | Multi-row panel showing K=5,6,7,8,10 side by side for comparison |
+
+### FST visualization (`src/plot_fst.py`)
+
+Converts the PLINK2 `.fst.summary` output into a symmetric breed-by-breed matrix and plots it as a clustered heatmap with hierarchical dendrograms:
+
+```bash
+ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
+  micromamba run -n enipro python src/plot_fst.py
+```
+
+**Figures generated** (in `results/figures/fst/`):
+
+| File | Description |
+|---|---|
+| `fst_distance_matrix.{png,pdf}` | Annotated clustered heatmap of the pairwise FST matrix from the LD-pruned Weir-Cockerham run |
 
 ### PCA visualization (`src/plot_pca.py`)
 
@@ -225,43 +396,41 @@ micromamba run -n enipro python src/plot_pca.py
 
 All plots use a consistent breed color palette defined in `config/params.yaml`. Each scatter plot shows axis labels with the proportion of variance explained by that PC.
 
+### ROH execution (`src/run_roh.R`)
+
+Runs `detectRUNS::slidingRUNS.run()` on the ROH-specific PED/MAP files and writes:
+
+- the full ROH table (`roh_runs.tsv`)
+- per-individual `FROH`
+- per-chromosome autosomal lengths used for `Laut`
+- per-individual ROH counts in the short/medium/long categories
+
+Example:
+
+```bash
+ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
+  micromamba run -n enipro Rscript src/run_roh.R config/params.yaml
+```
+
+### ROH visualization (`src/plot_roh.py`)
+
+Produces ROH summary figures from the `detectRUNS` outputs:
+
+```bash
+ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
+  micromamba run -n enipro python src/plot_roh.py config/params.yaml
+```
+
+**Figures generated** (in `results/figures/roh/`):
+
+| File | Description |
+|---|---|
+| `roh_length_classes_by_breed.{png,pdf}` | Mean ROH count per individual, split into short (1-5 Mb), medium (5-10 Mb), and long (>10 Mb) classes |
+| `froh_by_breed.{png,pdf}` | Breed-wise distribution of `FROH` |
+
 ## Configuration
 
 All parameters are centralized in `config/params.yaml`:
-
-```yaml
-# Paths
-input_prefix: /home/i/iapostof/projects/enipro/test_data/graega_top_alleles/graega_top_alleles
-results_dir:  /home/i/iapostof/projects/enipro/results
-
-# Species
-chr_set: 29        # goat: 29 autosomes
-autosomes: "1-29"
-
-# QC thresholds
-qc:
-  geno: 0.10       # max per-SNP missing rate
-  mind: 0.10       # max per-sample missing rate
-  maf: 0.01        # min minor allele frequency
-  hwe: 1e-6        # HWE p-value threshold
-  king_cutoff: 0.177  # KING kinship threshold
-
-# LD pruning
-ld_prune:
-  window: 50
-  step: 5
-  r2: 0.2
-
-# PCA
-pca:
-  n_pcs: 20
-
-# Breed colors for visualization
-breeds:
-  ANG: { color: "#e41a1c" }
-  ARI: { color: "#377eb8" }
-  # ... (10 breeds total)
-```
 
 Shell scripts parse this file via `scripts/_common.sh`. Python scripts load it via `src/config.py`.
 
@@ -279,13 +448,20 @@ repos/enipro/                         # Git-tracked code
 │   ├── 03_sample_qc.sh               # Step 2: sample-level QC
 │   ├── 04_relatedness.sh             # Step 3: KING relatedness check
 │   ├── 05_qc_summary.sh              # Step 4: summary statistics
-│   ├── 06_pca.sh                     # Steps 5–6: LD prune + PCA
-│   └── run_all.sh                    # Master runner
+│   ├── 06_pca.sh                     # Steps 5–6: LD prune + PCA (also saves pruned .bed for ADMIXTURE)
+│   ├── 07_admixture.sh               # ADMIXTURE K=2–30 (SLURM script, run on HPC)
+│   ├── 08_roh.sh                     # ROH-specific QC path + detectRUNS execution
+│   ├── 09_fst.sh                     # Pairwise breed FST on the LD-pruned dataset
+│   └── run_all.sh                    # Master runner (Steps 0–6 + visualization)
 ├── src/
 │   ├── config.py                     # YAML config loader
 │   ├── utils.py                      # PLINK output file parsers
 │   ├── qc_report.py                  # QC summary report + diagnostic plots
-│   └── plot_pca.py                   # PCA visualization
+│   ├── plot_pca.py                   # PCA visualization
+│   ├── plot_admixture.py             # ADMIXTURE CV error + Q-matrix plots
+│   ├── plot_fst.py                   # Pairwise FST matrix + clustered heatmap
+│   ├── run_roh.R                     # detectRUNS ROH calling + FROH tables
+│   └── plot_roh.py                   # ROH length-class and FROH figures
 ├── Makefile                          # Workflow orchestration
 └── .gitignore
 
@@ -296,20 +472,35 @@ projects/enipro/                      # Data and results (NOT in git)
 │       ├── graega_top_alleles.bim
 │       └── graega_top_alleles.fam
 ├── results/
-│   ├── qc/
-│   │   ├── step0_autosomal/          # After pre-QC filter
-│   │   ├── step1_snp_qc/            # After SNP QC
-│   │   ├── step2_sample_qc/         # After sample QC
-│   │   ├── step3_relatedness/        # KING outputs + LD prune lists
-│   │   ├── final/                    # Final QC'd dataset
-│   │   └── stats/                    # Missingness, het, freq files
-│   ├── pca/
-│   │   ├── pruned_snps/              # LD-pruned SNP lists
-│   │   └── eigenvec_eigenval/        # PCA results
-│   └── figures/
-│       ├── qc/                       # QC diagnostic plots
-│       └── pca/                      # PCA scatter and scree plots
+│   └── <RUN_STAMP>/
+│       ├── qc/
+│       │   ├── step0_autosomal/      # After pre-QC filter
+│       │   ├── step1_snp_qc/         # After SNP QC
+│       │   ├── step2_sample_qc/      # After sample QC
+│       │   ├── step3_relatedness/    # KING outputs + LD prune lists
+│       │   ├── final/                # Final QC'd dataset
+│       │   └── stats/                # Missingness, het, freq files
+│       ├── pca/
+│       │   ├── pruned_snps/          # LD-pruned SNP lists + graega_ldpruned.{bed,bim,fam}
+│       │   └── eigenvec_eigenval/    # PCA results
+│       ├── admixture/                # ADMIXTURE outputs (copied from HPC)
+│       │   ├── graega_ldpruned.{K}.Q # Ancestry fractions for each K
+│       │   ├── graega_ldpruned.{K}.P # Ancestral allele frequencies for each K
+│       │   ├── log{K}.out            # ADMIXTURE logs with CV errors
+│       │   └── provenance.txt        # Records input run stamp
+│       ├── fst/
+│       │   ├── graega_ldpruned_fst_wc.fst.summary
+│       │   └── graega_ldpruned_fst_wc.matrix.tsv
+│       ├── roh/
+│       │   ├── input_prep/           # ROH-only QC path without MAF filtering
+│       │   ├── input/                # Final ROH input PLINK + PED/MAP files
+│       │   ├── runs/                 # Detected ROH segments
+│       │   └── stats/                # FROH and ROH length-class tables
+│       └── figures/
+│           ├── qc/                   # QC diagnostic plots
+│           ├── pca/                  # PCA scatter and scree plots
+│           ├── admixture/            # CV error curve and Q-matrix bar charts
+│           ├── fst/                  # Pairwise FST clustered heatmap
+│           └── roh/                  # ROH class and FROH figures
 └── logs/
 ```
-
-

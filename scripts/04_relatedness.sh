@@ -6,9 +6,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
-INDIR="${RESULTS_DIR}/qc/step2_sample_qc"
-OUTDIR="${RESULTS_DIR}/qc/step3_relatedness"
-FINALDIR="${RESULTS_DIR}/qc/final"
+INDIR="${RUN_DIR}/qc/step2_sample_qc"
+OUTDIR="${RUN_DIR}/qc/step3_relatedness"
+FINALDIR="${RUN_DIR}/qc/final"
 mkdir -p "${OUTDIR}" "${FINALDIR}"
 
 echo "=== Step 3: Relatedness check ==="
@@ -16,7 +16,7 @@ echo "=== Step 3: Relatedness check ==="
 # LD pruning for relatedness estimation
 plink2 \
     --bfile "${INDIR}/graega_sampleqc" \
-    --chr-set "${CHR_SET}" \
+    --chr-set "${CHR_SET_ARGS[@]}" \
     --indep-pairwise "${LD_WINDOW}" "${LD_STEP}" "${LD_R2}" \
     --out "${OUTDIR}/ld_prune"
 
@@ -26,7 +26,7 @@ echo "LD-pruned SNP set: ${N_PRUNED_IN} variants"
 # KING relatedness with automatic removal
 plink2 \
     --bfile "${INDIR}/graega_sampleqc" \
-    --chr-set "${CHR_SET}" \
+    --chr-set "${CHR_SET_ARGS[@]}" \
     --extract "${OUTDIR}/ld_prune.prune.in" \
     --king-cutoff "${QC_KING}" \
     --out "${OUTDIR}/king"
@@ -42,7 +42,7 @@ if [ "${N_REMOVED}" -gt 0 ]; then
     echo "Removing ${N_REMOVED} related sample(s)"
     plink2 \
         --bfile "${INDIR}/graega_sampleqc" \
-        --chr-set "${CHR_SET}" \
+        --chr-set "${CHR_SET_ARGS[@]}" \
         --remove "${OUTDIR}/king.king.cutoff.out.id" \
         --make-bed \
         --out "${FINALDIR}/graega_qc"

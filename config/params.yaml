@@ -9,12 +9,13 @@ log_dir: /home/i/iapostof/projects/enipro/logs
 # --- Species ---
 chr_set: 29           # goat autosomes
 autosomes: "1-29"
+no_xy: true           # no XY pseudo-autosomal region (goat)
 
 # --- QC thresholds ---
 qc:
   geno: 0.10          # max per-SNP missing rate
   mind: 0.10          # max per-sample missing rate
-  maf: 0.01           # min minor allele frequency
+  maf: 0.02           # min minor allele frequency
   hwe: 1e-6           # HWE p-value threshold
   king_cutoff: 0.177  # KING kinship (1st-degree relatives)
 
@@ -27,6 +28,32 @@ ld_prune:
 # --- PCA ---
 pca:
   n_pcs: 20
+
+# --- FST ---
+fst:
+  blocksize: 100      # PLINK2 block-jackknife block size for pairwise FST SEs
+
+# --- ROH (detectRUNS sliding-window) ---
+roh:
+  min_length_bp: 1000000
+  min_snps: 50
+  min_density_bp_per_snp: 70000
+  window_size: 50
+  max_gap_bp: 100000
+  max_missing_window: 5
+  max_missing_run: 5
+  max_heterozygous_window: 1
+  max_heterozygous_run: 1
+  window_threshold: 0.05
+  length_classes_mb:
+    short:
+      min: 1
+      max: 5
+    medium:
+      min: 5
+      max: 10
+    long:
+      min: 10
 
 # --- Breed metadata ---
 breeds:

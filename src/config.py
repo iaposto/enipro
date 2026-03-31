@@ -31,6 +31,17 @@ def get_breed_colors(cfg: dict) -> dict[str, str]:
     return {code: info["color"] for code, info in cfg["breeds"].items()}
 
 
+def get_breed_order(cfg: dict) -> list[str]:
+    """Return breed codes in config order."""
+    return list(cfg["breeds"].keys())
+
+
+def get_breed_palette(cfg: dict) -> dict[str, str]:
+    """Return an ordered breed palette mapping."""
+    breed_colors = get_breed_colors(cfg)
+    return {breed: breed_colors[breed] for breed in get_breed_order(cfg)}
+
+
 def get_breed_labels(cfg: dict) -> dict[str, str]:
     """Return {breed_code: display_label} mapping."""
     return {code: info["label"] for code, info in cfg["breeds"].items()}
