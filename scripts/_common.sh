@@ -37,6 +37,9 @@ LD_R2=$(grep "r2:" "${CONFIG}" | head -1 | awk '{print $2}')
 # PCA
 N_PCS=$(grep "n_pcs:" "${CONFIG}" | head -1 | awk '{print $2}')
 
+# FST
+FST_BLOCKSIZE=$(grep "blocksize:" "${CONFIG}" | head -1 | awk '{print $2}')
+
 # --- Timestamped run directory ---
 # If RUN_STAMP was not exported by run_all.sh (i.e., individual script run),
 # generate a new stamp so each standalone run also gets its own directory.

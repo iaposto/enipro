@@ -47,38 +47,6 @@ This installs:
 
 The pipeline is organized into numbered shell scripts. Each script reads parameters from `config/params.yaml` via a shared `scripts/_common.sh` module.
 
-### Run directories
-
-Each pipeline run writes its output to a timestamped subdirectory:
-
-```
-results/<YYYYMMDD_HHMMSS>/
-├── params.yaml          # copy of config used for this run
-├── qc/
-│   ├── step0_autosomal/
-│   ├── step1_snp_qc/
-│   ├── step2_sample_qc/
-│   ├── step3_relatedness/
-│   ├── final/
-│   └── stats/
-├── pca/
-│   ├── pruned_snps/     # LD-pruned .bed/.bim/.fam also saved here for ADMIXTURE input
-│   └── eigenvec_eigenval/
-├── admixture/           # ADMIXTURE outputs (copied from HPC after run)
-├── roh/
-│   ├── input_prep/      # ROH-specific QC path (no MAF filter; LD only for KING relatedness)
-│   ├── input/           # Final ROH PLINK + PED/MAP input
-│   ├── runs/            # ROH segment calls
-│   └── stats/           # FROH tables and summary files
-└── figures/
-    ├── qc/
-    ├── pca/
-    ├── admixture/
-    └── roh/
-```
-
-When `run_all.sh` is invoked it generates a single `RUN_STAMP` shared by all steps and the Python visualization scripts. When an individual step script is run directly, it generates its own stamp. The `params.yaml` snapshot makes every run directory self-contained and reproducible.
-
 ### Running
 
 Full pipeline:
@@ -169,8 +137,6 @@ plink2 --extract ld_prune.prune.in --king-cutoff 0.177  # KING kinship
 ```
 
 **LD pruning** is performed first (window=50 SNPs, step=5, r²=0.2).
-
-**KING kinship** is used instead of PLINK's IBD-based `--genome` because KING is robust to population structure. "In a multi-breed dataset, IBD estimates are inflated by shared ancestry between breeds, leading to false positives. KING correctly handles this."
 
 | KING kinship | Relationship |
 |---|---|
@@ -266,6 +232,36 @@ admixture --cv=10 -j16 -s 42 graega_ldpruned.bed $K | tee log${K}.out
 | `graega_ldpruned.{K}.P` | Ancestral allele frequencies per SNP (45,192 rows × K columns) |
 | `log{K}.out` | ADMIXTURE log including CV error for each K |
 | `provenance.txt` | Records which pipeline run's pruned files were used as input |
+
+### Downstream pairwise FST (`09_fst.sh`)
+
+Runs pairwise breed-level FST directly on the **LD-pruned PLINK dataset** from Step 5b, using PLINK 2's `--fst` implementation with the **Weir-Cockerham** estimator.
+
+This step reuses the breed codes already stored in the `.fam` **FID** column:
+
+```bash
+plink2 \
+  --bfile results/<RUN_STAMP>/pca/pruned_snps/graega_ldpruned \
+  --family BREED \
+  --fst BREED method=wc blocksize=100 \
+  --out results/<RUN_STAMP>/fst/graega_ldpruned_fst_wc
+```
+
+PLINK 2 documents that `--family` treats FID as a categorical phenotype, while `--fst` writes pairwise population results to `.fst.summary`.
+
+Run it on an existing pipeline output by setting the run stamp explicitly:
+
+```bash
+RUN_STAMP=<RUN_STAMP> micromamba run -n enipro bash scripts/09_fst.sh
+```
+
+**Outputs:**
+
+| File | Content |
+|---|---|
+| `results/<RUN_STAMP>/fst/graega_ldpruned_fst_wc.fst.summary` | Pairwise breed FST table with the two population IDs, `WC_FST`, and `SE` |
+| `results/<RUN_STAMP>/fst/graega_ldpruned_fst_wc.matrix.tsv` | Symmetric FST distance matrix derived from the summary table |
+| `results/<RUN_STAMP>/figures/fst/fst_distance_matrix.{png,pdf}` | Clustered heatmap with dendrograms for the pairwise FST matrix |
 
 ### Step 8 — ROH detection (`08_roh.sh`)
 
@@ -365,6 +361,21 @@ ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
 | `admixture_K{K}.png` | Stacked bar chart of ancestry proportions for one K value, samples sorted by breed |
 | `admixture_panel.png` | Multi-row panel showing K=5,6,7,8,10 side by side for comparison |
 
+### FST visualization (`src/plot_fst.py`)
+
+Converts the PLINK2 `.fst.summary` output into a symmetric breed-by-breed matrix and plots it as a clustered heatmap with hierarchical dendrograms:
+
+```bash
+ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
+  micromamba run -n enipro python src/plot_fst.py
+```
+
+**Figures generated** (in `results/figures/fst/`):
+
+| File | Description |
+|---|---|
+| `fst_distance_matrix.{png,pdf}` | Annotated clustered heatmap of the pairwise FST matrix from the LD-pruned Weir-Cockerham run |
+
 ### PCA visualization (`src/plot_pca.py`)
 
 Produces PCA plots from the eigenvector/eigenvalue output:
@@ -421,53 +432,6 @@ ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
 
 All parameters are centralized in `config/params.yaml`:
 
-```yaml
-# Paths
-input_prefix: /home/i/iapostof/projects/enipro/test_data/graega_top_alleles/graega_top_alleles
-results_dir:  /home/i/iapostof/projects/enipro/results
-
-# Species
-chr_set: 29        # goat: 29 autosomes
-autosomes: "1-29"
-
-# QC thresholds
-qc:
-  geno: 0.10       # max per-SNP missing rate
-  mind: 0.10       # max per-sample missing rate
-  maf: 0.02        # min minor allele frequency
-  hwe: 1e-6        # HWE p-value threshold
-  king_cutoff: 0.177  # KING kinship threshold
-
-# LD pruning
-ld_prune:
-  window: 50
-  step: 5
-  r2: 0.2
-
-# PCA
-pca:
-  n_pcs: 20
-
-# ROH
-roh:
-  min_length_bp: 1000000
-  min_snps: 50
-  min_density_bp_per_snp: 70000
-  window_size: 50
-  max_gap_bp: 100000
-  max_missing_window: 5
-  max_missing_run: 5
-  max_heterozygous_window: 1
-  max_heterozygous_run: 1
-  window_threshold: 0.05
-
-# Breed colors for visualization
-breeds:
-  ANG: { color: "#e41a1c" }
-  ARI: { color: "#377eb8" }
-  # ... (10 breeds total)
-```
-
 Shell scripts parse this file via `scripts/_common.sh`. Python scripts load it via `src/config.py`.
 
 ## Directory layout
@@ -487,6 +451,7 @@ repos/enipro/                         # Git-tracked code
 │   ├── 06_pca.sh                     # Steps 5–6: LD prune + PCA (also saves pruned .bed for ADMIXTURE)
 │   ├── 07_admixture.sh               # ADMIXTURE K=2–30 (SLURM script, run on HPC)
 │   ├── 08_roh.sh                     # ROH-specific QC path + detectRUNS execution
+│   ├── 09_fst.sh                     # Pairwise breed FST on the LD-pruned dataset
 │   └── run_all.sh                    # Master runner (Steps 0–6 + visualization)
 ├── src/
 │   ├── config.py                     # YAML config loader
@@ -494,6 +459,7 @@ repos/enipro/                         # Git-tracked code
 │   ├── qc_report.py                  # QC summary report + diagnostic plots
 │   ├── plot_pca.py                   # PCA visualization
 │   ├── plot_admixture.py             # ADMIXTURE CV error + Q-matrix plots
+│   ├── plot_fst.py                   # Pairwise FST matrix + clustered heatmap
 │   ├── run_roh.R                     # detectRUNS ROH calling + FROH tables
 │   └── plot_roh.py                   # ROH length-class and FROH figures
 ├── Makefile                          # Workflow orchestration
@@ -522,6 +488,9 @@ projects/enipro/                      # Data and results (NOT in git)
 │       │   ├── graega_ldpruned.{K}.P # Ancestral allele frequencies for each K
 │       │   ├── log{K}.out            # ADMIXTURE logs with CV errors
 │       │   └── provenance.txt        # Records input run stamp
+│       ├── fst/
+│       │   ├── graega_ldpruned_fst_wc.fst.summary
+│       │   └── graega_ldpruned_fst_wc.matrix.tsv
 │       ├── roh/
 │       │   ├── input_prep/           # ROH-only QC path without MAF filtering
 │       │   ├── input/                # Final ROH input PLINK + PED/MAP files
@@ -531,6 +500,7 @@ projects/enipro/                      # Data and results (NOT in git)
 │           ├── qc/                   # QC diagnostic plots
 │           ├── pca/                  # PCA scatter and scree plots
 │           ├── admixture/            # CV error curve and Q-matrix bar charts
+│           ├── fst/                  # Pairwise FST clustered heatmap
 │           └── roh/                  # ROH class and FROH figures
 └── logs/
 ```

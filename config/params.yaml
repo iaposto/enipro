@@ -29,6 +29,10 @@ ld_prune:
 pca:
   n_pcs: 20
 
+# --- FST ---
+fst:
+  blocksize: 100      # PLINK2 block-jackknife block size for pairwise FST SEs
+
 # --- ROH (detectRUNS sliding-window) ---
 roh:
   min_length_bp: 1000000

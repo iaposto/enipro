@@ -3,7 +3,7 @@ SHELL := /bin/bash
 SCRIPTS := scripts
 ENV := micromamba run -n enipro
 
-.PHONY: all qc pca figures roh clean help
+.PHONY: all qc pca figures fst roh clean help
 
 help:
 	@echo "Targets:"
@@ -11,6 +11,7 @@ help:
 	@echo "  qc       — Run QC steps 0–4"
 	@echo "  pca      — Run PCA (requires qc)"
 	@echo "  figures  — Generate all plots (requires qc + pca)"
+	@echo "  fst      — Run pairwise FST on an existing run with PCA outputs"
 	@echo "  roh      — Run ROH detection + plots"
 	@echo "  clean    — Print instructions for cleaning outputs"
 
@@ -29,6 +30,9 @@ pca: qc
 figures: pca
 	$(ENV) python src/qc_report.py
 	$(ENV) python src/plot_pca.py
+
+fst:
+	$(ENV) bash $(SCRIPTS)/09_fst.sh
 
 roh:
 	$(ENV) bash $(SCRIPTS)/08_roh.sh
