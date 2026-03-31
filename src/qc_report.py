@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate QC summary report with tables and diagnostic plots."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -11,18 +12,21 @@ import seaborn as sns
 
 # Allow running as script from repo root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.config import load_config, get_breed_colors
+from src.config import load_config, get_breed_labels, get_breed_order, get_breed_palette
+from src.plotting import plot_breed_boxplot
 from src.utils import read_fam, read_het, read_smiss, read_vmiss, read_freq
 
 
 def main(config_path: str | None = None):
     cfg = load_config(config_path)
-    results = Path(cfg["results_dir"])
+    results = Path(os.environ.get("ENIPRO_RUN_DIR") or cfg["results_dir"])
     stats_dir = results / "qc" / "stats"
     fig_dir = results / "figures" / "qc"
     fig_dir.mkdir(parents=True, exist_ok=True)
 
-    breed_colors = get_breed_colors(cfg)
+    breed_labels = get_breed_labels(cfg)
+    breed_order = get_breed_order(cfg)
+    breed_palette = get_breed_palette(cfg)
 
     # --- Load data ---
     fam = read_fam(results / "qc" / "final" / "graega_qc.fam")
@@ -121,13 +125,15 @@ def main(config_path: str | None = None):
     plt.close(fig)
 
     # 4. Heterozygosity by breed
-    breed_order = sorted(breed_colors.keys())
-    palette = [breed_colors[b] for b in breed_order]
+    breed_order = [breed for breed in breed_order if breed in het_by_breed["breed"].unique()]
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    sns.boxplot(
+    plot_breed_boxplot(
         data=het_by_breed, x="breed", y="O_HET",
-        hue="breed", order=breed_order, palette=palette, legend=False, ax=ax,
+        breed_order=breed_order,
+        breed_palette=breed_palette,
+        breed_labels=breed_labels,
+        ax=ax,
     )
     ax.set_xlabel("Breed")
     ax.set_ylabel("Observed Heterozygosity")
@@ -139,9 +145,12 @@ def main(config_path: str | None = None):
 
     # 5. Inbreeding F by breed
     fig, ax = plt.subplots(figsize=(10, 5))
-    sns.boxplot(
+    plot_breed_boxplot(
         data=het_by_breed, x="breed", y="F",
-        hue="breed", order=breed_order, palette=palette, legend=False, ax=ax,
+        breed_order=breed_order,
+        breed_palette=breed_palette,
+        breed_labels=breed_labels,
+        ax=ax,
     )
     ax.set_xlabel("Breed")
     ax.set_ylabel("Inbreeding Coefficient (F)")

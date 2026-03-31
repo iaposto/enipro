@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """PCA visualization: scree plot, PC scatter plots, and pairplot."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -10,19 +11,24 @@ import pandas as pd
 import seaborn as sns
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.config import load_config, get_breed_colors, get_breed_labels
+from src.config import (
+    get_breed_labels,
+    get_breed_order,
+    get_breed_palette,
+    load_config,
+)
 from src.utils import read_eigenvec, read_eigenval, read_fam
 
 
 def main(config_path: str | None = None):
     cfg = load_config(config_path)
-    results = Path(cfg["results_dir"])
+    results = Path(os.environ.get("ENIPRO_RUN_DIR") or cfg["results_dir"])
     pca_dir = results / "pca" / "eigenvec_eigenval"
     fig_dir = results / "figures" / "pca"
     fig_dir.mkdir(parents=True, exist_ok=True)
 
-    breed_colors = get_breed_colors(cfg)
     breed_labels = get_breed_labels(cfg)
+    breed_palette = get_breed_palette(cfg)
 
     # Load PCA results
     eigenvec = read_eigenvec(pca_dir / "graega_pca.eigenvec")
@@ -35,8 +41,8 @@ def main(config_path: str | None = None):
     # Add breed info
     eigenvec["breed"] = eigenvec["FID"]
 
-    breed_order = sorted(breed_colors.keys())
-    palette = {b: breed_colors[b] for b in breed_order}
+    breed_order = [breed for breed in get_breed_order(cfg) if breed in eigenvec["breed"].unique()]
+    palette = {breed: breed_palette[breed] for breed in breed_order}
 
     sns.set_style("whitegrid")
 

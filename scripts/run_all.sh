@@ -5,8 +5,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Generate a single timestamp shared by all steps in this run.
+# Exported so _common.sh (sourced in subprocesses) picks it up.
+export RUN_STAMP="$(date +%Y%m%d_%H%M%S)"
+
+# Source _common.sh in the parent shell to set ENIPRO_RUN_DIR so Python
+# scripts launched below inherit it without needing a subprocess.
+source "${SCRIPT_DIR}/_common.sh"
+
 echo "========================================="
 echo " enipro Phase 1: QC + PCA Pipeline"
+echo " Run: ${RUN_STAMP}"
+echo " Output: ${RUN_DIR}"
 echo "========================================="
 
 bash "${SCRIPT_DIR}/01_pre_qc_filter.sh"
