@@ -20,7 +20,7 @@ All tools and dependencies are managed in a micromamba environment named `enipro
 ### Setup
 
 ```bash
-bash scripts/00_setup_env.sh
+python scripts/00_setup_env.py
 ```
 
 This installs:
@@ -45,14 +45,14 @@ This installs:
 
 ## Pipeline
 
-The pipeline is organized into numbered shell scripts. Each script reads parameters from `config/params.yaml` via a shared `scripts/_common.sh` module.
+The pipeline is organized into numbered Python scripts. Each script reads parameters from `config/params.yaml` via the shared `scripts/_common.py` helpers.
 
 ### Running
 
 Full pipeline:
 
 ```bash
-micromamba run -n enipro bash scripts/run_all.sh
+micromamba run -n enipro python scripts/run_all.py
 ```
 
 Or via Make:
@@ -70,16 +70,16 @@ micromamba run -n enipro make roh
 Individual steps can be run independently:
 
 ```bash
-micromamba run -n enipro bash scripts/01_pre_qc_filter.sh
+micromamba run -n enipro python scripts/01_pre_qc_filter.py
 ```
 
 The ROH workflow is self-contained and can also be run directly:
 
 ```bash
-micromamba run -n enipro bash scripts/08_roh.sh
+micromamba run -n enipro python scripts/08_roh.py
 ```
 
-### Step 0 — Pre-QC filter (`01_pre_qc_filter.sh`)
+### Step 0 — Pre-QC filter (`01_pre_qc_filter.py`)
 
 Filters the raw dataset to retain only autosomal, biallelic SNPs with standard ACGT alleles.
 
@@ -99,7 +99,7 @@ plink2 --bfile <input> --chr-set 29 no-xy --chr 1-29 --snps-only just-acgt --max
 
 **Output:** `results/qc/step0_autosomal/graega_autosomal.{bed,bim,fam}`
 
-### Step 1 — SNP-level QC (`02_snp_qc.sh`)
+### Step 1 — SNP-level QC (`02_snp_qc.py`)
 
 Applies per-variant quality filters.
 
@@ -115,7 +115,7 @@ plink2 --chr-set 29 no-xy --geno 0.10 --maf 0.02 --hwe 1e-6 --make-bed
 
 **Output:** `results/qc/step1_snp_qc/graega_snpqc.{bed,bim,fam}`
 
-### Step 2 — Sample-level QC (`03_sample_qc.sh`)
+### Step 2 — Sample-level QC (`03_sample_qc.py`)
 
 Applies per-individual call rate filter.
 
@@ -127,7 +127,7 @@ Removes individuals with >10% missing genotypes.
 
 **Output:** `results/qc/step2_sample_qc/graega_sampleqc.{bed,bim,fam}`
 
-### Step 3 — Relatedness check (`04_relatedness.sh`)
+### Step 3 — Relatedness check (`04_relatedness.py`)
 
 Identifies and removes closely related individuals that would bias PCA and downstream analyses.
 
@@ -154,7 +154,7 @@ If any samples are flagged, they are removed with `--remove`. If none are flagge
 
 **Output:** `results/qc/final/graega_qc.{bed,bim,fam}` — the final QC'd dataset used for all downstream analyses.
 
-### Step 4 — QC summary statistics (`05_qc_summary.sh`)
+### Step 4 — QC summary statistics (`05_qc_summary.py`)
 
 Generates descriptive statistics on the final QC'd dataset.
 
@@ -174,7 +174,7 @@ where E(HOM) is the expected number of homozygous genotypes under Hardy-Weinberg
 
 **Output:** `results/qc/stats/{missing.smiss, missing.vmiss, het.het, freq.afreq}`
 
-### Step 5–6 — PCA (`06_pca.sh`)
+### Step 5–6 — PCA (`06_pca.py`)
 
 LD pruning followed by principal component analysis.
 
@@ -198,15 +198,15 @@ PLINK2 `--pca` is used.
 | `results/pca/eigenvec_eigenval/graega_pca.eigenvec` | Tab-separated file: FID, IID, PC1–PC20 |
 | `results/pca/eigenvec_eigenval/graega_pca.eigenval` | One eigenvalue per line (20 values) |
 
-### Step 7 — ADMIXTURE (`07_admixture.sh`)
+### Step 7 — ADMIXTURE (`07_admixture.py`)
 
-Model-based ancestry estimation run on an **external HPC cluster** (not part of `run_all.sh`). The input is the LD-pruned binary dataset saved by Step 5b.
+Model-based ancestry estimation run on an **external HPC cluster** (not part of `run_all.py`). The input is the LD-pruned binary dataset saved by Step 5b.
 
-**Input:** `results/pca/pruned_snps/graega_ldpruned.{bed,bim,fam}` — copy these to the HPC working directory alongside `07_admixture.sh`.
+**Input:** `results/pca/pruned_snps/graega_ldpruned.{bed,bim,fam}` — copy these to the HPC working directory alongside `07_admixture.py`.
 
 ```bash
 # Submitted via SLURM
-sbatch scripts/07_admixture.sh
+sbatch scripts/07_admixture.py
 ```
 
 The script runs K=2–30 sequentially, each with 10-fold cross-validation:
@@ -233,7 +233,7 @@ admixture --cv=10 -j16 -s 42 graega_ldpruned.bed $K | tee log${K}.out
 | `log{K}.out` | ADMIXTURE log including CV error for each K |
 | `provenance.txt` | Records which pipeline run's pruned files were used as input |
 
-### Downstream pairwise FST (`09_fst.sh`)
+### Downstream pairwise FST (`09_fst.py`)
 
 Runs pairwise breed-level FST directly on the **LD-pruned PLINK dataset** from Step 5b, using PLINK 2's `--fst` implementation with the **Weir-Cockerham** estimator.
 
@@ -252,7 +252,7 @@ PLINK 2 documents that `--family` treats FID as a categorical phenotype, while `
 Run it on an existing pipeline output by setting the run stamp explicitly:
 
 ```bash
-RUN_STAMP=<RUN_STAMP> micromamba run -n enipro bash scripts/09_fst.sh
+RUN_STAMP=<RUN_STAMP> micromamba run -n enipro python scripts/09_fst.py
 ```
 
 **Outputs:**
@@ -261,9 +261,9 @@ RUN_STAMP=<RUN_STAMP> micromamba run -n enipro bash scripts/09_fst.sh
 |---|---|
 | `results/<RUN_STAMP>/fst/graega_ldpruned_fst_wc.fst.summary` | Pairwise breed FST table with the two population IDs, `WC_FST`, and `SE` |
 | `results/<RUN_STAMP>/fst/graega_ldpruned_fst_wc.matrix.tsv` | Symmetric FST distance matrix derived from the summary table |
-| `results/<RUN_STAMP>/figures/fst/fst_distance_matrix.{png,pdf}` | Clustered heatmap with dendrograms for the pairwise FST matrix |
+| `results/<RUN_STAMP>/figures/fst/fst_distance_matrix.png` | Full square FST matrix in clustered order with a top dendrogram and cell annotations |
 
-### Step 8 — ROH detection (`08_roh.sh`)
+### Step 8 — ROH detection (`08_roh.py`)
 
 Runs of homozygosity are called with the CRAN `detectRUNS` package using the **sliding-window** method.
 
@@ -336,11 +336,11 @@ micromamba run -n enipro python src/qc_report.py
 
 | File | Description |
 |---|---|
-| `maf_distribution.{png,pdf}` | Histogram of minor allele frequencies after QC |
-| `sample_missingness.{png,pdf}` | Distribution of per-sample missing rates |
-| `snp_missingness.{png,pdf}` | Distribution of per-SNP missing rates |
-| `het_by_breed.{png,pdf}` | Boxplot of observed heterozygosity per breed |
-| `inbreeding_by_breed.{png,pdf}` | Boxplot of inbreeding coefficient *F* per breed |
+| `maf_distribution.png` | Histogram of minor allele frequencies after QC |
+| `sample_missingness.png` | Distribution of per-sample missing rates |
+| `snp_missingness.png` | Distribution of per-SNP missing rates |
+| `het_by_breed.png` | Boxplot of observed heterozygosity per breed |
+| `inbreeding_by_breed.png` | Boxplot of inbreeding coefficient *F* per breed |
 
 The text report prints() variant/sample counts at each QC step, per-breed sample sizes, and per-breed heterozygosity summaries.
 
@@ -361,20 +361,20 @@ ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
 | `admixture_K{K}.png` | Stacked bar chart of ancestry proportions for one K value, samples sorted by breed |
 | `admixture_panel.png` | Multi-row panel showing K=5,6,7,8,10 side by side for comparison |
 
-### FST visualization (`src/plot_fst.py`)
+### FST visualization (`src/plot_fst.R`)
 
-Converts the PLINK2 `.fst.summary` output into a symmetric breed-by-breed matrix and plots it as a clustered heatmap with hierarchical dendrograms:
+Converts the PLINK2 `.fst.summary` output into a symmetric breed-by-breed matrix, writes the matrix in plotted order, and renders a full square annotated heatmap with a top dendrogram:
 
 ```bash
 ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
-  micromamba run -n enipro python src/plot_fst.py
+  micromamba run -n enipro Rscript src/plot_fst.R
 ```
 
 **Figures generated** (in `results/figures/fst/`):
 
 | File | Description |
 |---|---|
-| `fst_distance_matrix.{png,pdf}` | Annotated clustered heatmap of the pairwise FST matrix from the LD-pruned Weir-Cockerham run |
+| `fst_distance_matrix.png` | Full square annotated FST matrix from the LD-pruned Weir-Cockerham run, ordered by average-linkage clustering |
 
 ### PCA visualization (`src/plot_pca.py`)
 
@@ -388,11 +388,11 @@ micromamba run -n enipro python src/plot_pca.py
 
 | File | Description |
 |---|---|
-| `scree_plot.{png,pdf}` | Bar chart of variance explained (%) per PC, with annotations on the top PCs |
-| `pca_pc1_pc2.{png,pdf}` | PC1 vs PC2 scatter plot, colored by breed |
-| `pca_pc1_pc3.{png,pdf}` | PC1 vs PC3 scatter plot |
-| `pca_pc2_pc3.{png,pdf}` | PC2 vs PC3 scatter plot |
-| `pca_pairplot_4pc.{png,pdf}` | Pairwise scatter of PC1–PC4 with KDE on the diagonal |
+| `scree_plot.png` | Bar chart of variance explained (%) per PC, with annotations on the top PCs |
+| `pca_pc1_pc2.png` | PC1 vs PC2 scatter plot, colored by breed |
+| `pca_pc1_pc3.png` | PC1 vs PC3 scatter plot |
+| `pca_pc2_pc3.png` | PC2 vs PC3 scatter plot |
+| `pca_pairplot_4pc.png` | Pairwise scatter of PC1–PC4 with KDE on the diagonal |
 
 All plots use a consistent breed color palette defined in `config/params.yaml`. Each scatter plot shows axis labels with the proportion of variance explained by that PC.
 
@@ -425,82 +425,11 @@ ENIPRO_RUN_DIR=/home/i/iapostof/projects/enipro/results/<RUN_STAMP> \
 
 | File | Description |
 |---|---|
-| `roh_length_classes_by_breed.{png,pdf}` | Mean ROH count per individual, split into short (1-5 Mb), medium (5-10 Mb), and long (>10 Mb) classes |
-| `froh_by_breed.{png,pdf}` | Breed-wise distribution of `FROH` |
+| `roh_length_classes_by_breed.png` | Mean ROH count per individual, split into short (1-5 Mb), medium (5-10 Mb), and long (>10 Mb) classes |
+| `froh_by_breed.png` | Breed-wise distribution of `FROH` |
 
 ## Configuration
 
 All parameters are centralized in `config/params.yaml`:
 
-Shell scripts parse this file via `scripts/_common.sh`. Python scripts load it via `src/config.py`.
-
-## Directory layout
-
-```
-repos/enipro/                         # Git-tracked code
-├── config/
-│   └── params.yaml                   # Central configuration
-├── scripts/
-│   ├── _common.sh                    # Shared variables (sourced by all scripts)
-│   ├── 00_setup_env.sh               # Environment setup
-│   ├── 01_pre_qc_filter.sh           # Step 0: autosomal biallelic filter
-│   ├── 02_snp_qc.sh                  # Step 1: SNP-level QC
-│   ├── 03_sample_qc.sh               # Step 2: sample-level QC
-│   ├── 04_relatedness.sh             # Step 3: KING relatedness check
-│   ├── 05_qc_summary.sh              # Step 4: summary statistics
-│   ├── 06_pca.sh                     # Steps 5–6: LD prune + PCA (also saves pruned .bed for ADMIXTURE)
-│   ├── 07_admixture.sh               # ADMIXTURE K=2–30 (SLURM script, run on HPC)
-│   ├── 08_roh.sh                     # ROH-specific QC path + detectRUNS execution
-│   ├── 09_fst.sh                     # Pairwise breed FST on the LD-pruned dataset
-│   └── run_all.sh                    # Master runner (Steps 0–6 + visualization)
-├── src/
-│   ├── config.py                     # YAML config loader
-│   ├── utils.py                      # PLINK output file parsers
-│   ├── qc_report.py                  # QC summary report + diagnostic plots
-│   ├── plot_pca.py                   # PCA visualization
-│   ├── plot_admixture.py             # ADMIXTURE CV error + Q-matrix plots
-│   ├── plot_fst.py                   # Pairwise FST matrix + clustered heatmap
-│   ├── run_roh.R                     # detectRUNS ROH calling + FROH tables
-│   └── plot_roh.py                   # ROH length-class and FROH figures
-├── Makefile                          # Workflow orchestration
-└── .gitignore
-
-projects/enipro/                      # Data and results (NOT in git)
-├── test_data/
-│   └── graega_top_alleles/           # Raw input (never modified)
-│       ├── graega_top_alleles.bed
-│       ├── graega_top_alleles.bim
-│       └── graega_top_alleles.fam
-├── results/
-│   └── <RUN_STAMP>/
-│       ├── qc/
-│       │   ├── step0_autosomal/      # After pre-QC filter
-│       │   ├── step1_snp_qc/         # After SNP QC
-│       │   ├── step2_sample_qc/      # After sample QC
-│       │   ├── step3_relatedness/    # KING outputs + LD prune lists
-│       │   ├── final/                # Final QC'd dataset
-│       │   └── stats/                # Missingness, het, freq files
-│       ├── pca/
-│       │   ├── pruned_snps/          # LD-pruned SNP lists + graega_ldpruned.{bed,bim,fam}
-│       │   └── eigenvec_eigenval/    # PCA results
-│       ├── admixture/                # ADMIXTURE outputs (copied from HPC)
-│       │   ├── graega_ldpruned.{K}.Q # Ancestry fractions for each K
-│       │   ├── graega_ldpruned.{K}.P # Ancestral allele frequencies for each K
-│       │   ├── log{K}.out            # ADMIXTURE logs with CV errors
-│       │   └── provenance.txt        # Records input run stamp
-│       ├── fst/
-│       │   ├── graega_ldpruned_fst_wc.fst.summary
-│       │   └── graega_ldpruned_fst_wc.matrix.tsv
-│       ├── roh/
-│       │   ├── input_prep/           # ROH-only QC path without MAF filtering
-│       │   ├── input/                # Final ROH input PLINK + PED/MAP files
-│       │   ├── runs/                 # Detected ROH segments
-│       │   └── stats/                # FROH and ROH length-class tables
-│       └── figures/
-│           ├── qc/                   # QC diagnostic plots
-│           ├── pca/                  # PCA scatter and scree plots
-│           ├── admixture/            # CV error curve and Q-matrix bar charts
-│           ├── fst/                  # Pairwise FST clustered heatmap
-│           └── roh/                  # ROH class and FROH figures
-└── logs/
-```
+Pipeline scripts resolve this file via `scripts/_common.py`, which loads YAML through `src/config.py`.

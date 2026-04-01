@@ -23,7 +23,7 @@ config_path <- local({
 cfg <- yaml.load_file(config_path)
 run_dir <- Sys.getenv("ENIPRO_RUN_DIR")
 if (identical(run_dir, "")) {
-  stop("ENIPRO_RUN_DIR is not set. Run this script from scripts/08_roh.sh.")
+  stop("ENIPRO_RUN_DIR is not set. Run this script from scripts/08_roh.py.")
 }
 run_dir <- normalizePath(run_dir, mustWork = TRUE)
 

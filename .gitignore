@@ -18,6 +18,6 @@ data/
 # Environment
 .env
 *.egg-info/
-codex.md
+AGENTS.md
 .vscode/
 
