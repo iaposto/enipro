@@ -59,7 +59,6 @@ def main(config_path: str | None = None):
         ax.text(i + 1, pve[i] + 0.2, f"{pve[i]:.1f}%", ha="center", fontsize=8)
     fig.tight_layout()
     fig.savefig(fig_dir / "scree_plot.png", dpi=300)
-    fig.savefig(fig_dir / "scree_plot.pdf")
     plt.close(fig)
 
     # --- Helper for PC scatter ---
@@ -85,7 +84,6 @@ def main(config_path: str | None = None):
         )
         fig.tight_layout()
         fig.savefig(fig_dir / f"{filename}.png", dpi=300, bbox_inches="tight")
-        fig.savefig(fig_dir / f"{filename}.pdf", bbox_inches="tight")
         plt.close(fig)
 
     # --- 2-4. PC scatter plots ---
@@ -106,7 +104,6 @@ def main(config_path: str | None = None):
     )
     g.figure.suptitle("PCA Pairplot (PC1–PC4)", y=1.01)
     g.savefig(fig_dir / "pca_pairplot_4pc.png", dpi=300, bbox_inches="tight")
-    g.savefig(fig_dir / "pca_pairplot_4pc.pdf", bbox_inches="tight")
     plt.close(g.figure)
 
     print(f"PCA figures saved to {fig_dir}/")

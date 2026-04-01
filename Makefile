@@ -18,24 +18,24 @@ help:
 all: qc pca figures
 
 qc:
-	$(ENV) bash $(SCRIPTS)/01_pre_qc_filter.sh
-	$(ENV) bash $(SCRIPTS)/02_snp_qc.sh
-	$(ENV) bash $(SCRIPTS)/03_sample_qc.sh
-	$(ENV) bash $(SCRIPTS)/04_relatedness.sh
-	$(ENV) bash $(SCRIPTS)/05_qc_summary.sh
+	$(ENV) python $(SCRIPTS)/01_pre_qc_filter.py
+	$(ENV) python $(SCRIPTS)/02_snp_qc.py
+	$(ENV) python $(SCRIPTS)/03_sample_qc.py
+	$(ENV) python $(SCRIPTS)/04_relatedness.py
+	$(ENV) python $(SCRIPTS)/05_qc_summary.py
 
 pca: qc
-	$(ENV) bash $(SCRIPTS)/06_pca.sh
+	$(ENV) python $(SCRIPTS)/06_pca.py
 
 figures: pca
 	$(ENV) python src/qc_report.py
 	$(ENV) python src/plot_pca.py
 
 fst:
-	$(ENV) bash $(SCRIPTS)/09_fst.sh
+	$(ENV) python $(SCRIPTS)/09_fst.py
 
 roh:
-	$(ENV) bash $(SCRIPTS)/08_roh.sh
+	$(ENV) python $(SCRIPTS)/08_roh.py
 
 clean:
 	@echo "To remove all results, run:"

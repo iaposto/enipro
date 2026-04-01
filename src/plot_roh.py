@@ -70,7 +70,6 @@ def main(config_path: str | None = None):
     ax.legend(title="ROH length")
     fig.tight_layout()
     fig.savefig(fig_dir / "roh_length_classes_by_breed.png", dpi=300, bbox_inches="tight")
-    fig.savefig(fig_dir / "roh_length_classes_by_breed.pdf", bbox_inches="tight")
     plt.close(fig)
 
     # FROH distribution by breed.
@@ -91,7 +90,6 @@ def main(config_path: str | None = None):
     ax.set_title("Genomic Inbreeding (FROH) by Breed")
     fig.tight_layout()
     fig.savefig(fig_dir / "froh_by_breed.png", dpi=300, bbox_inches="tight")
-    fig.savefig(fig_dir / "froh_by_breed.pdf", bbox_inches="tight")
     plt.close(fig)
 
     print(f"ROH figures saved to {fig_dir}/")

@@ -99,7 +99,6 @@ def main(config_path: str | None = None):
     ax.set_title("MAF Distribution (post-QC)")
     fig.tight_layout()
     fig.savefig(fig_dir / "maf_distribution.png", dpi=300)
-    fig.savefig(fig_dir / "maf_distribution.pdf")
     plt.close(fig)
 
     # 2. Per-sample missingness
@@ -110,7 +109,6 @@ def main(config_path: str | None = None):
     ax.set_title("Per-Sample Missing Rate (post-QC)")
     fig.tight_layout()
     fig.savefig(fig_dir / "sample_missingness.png", dpi=300)
-    fig.savefig(fig_dir / "sample_missingness.pdf")
     plt.close(fig)
 
     # 3. Per-SNP missingness
@@ -121,7 +119,6 @@ def main(config_path: str | None = None):
     ax.set_title("Per-SNP Missing Rate (post-QC)")
     fig.tight_layout()
     fig.savefig(fig_dir / "snp_missingness.png", dpi=300)
-    fig.savefig(fig_dir / "snp_missingness.pdf")
     plt.close(fig)
 
     # 4. Heterozygosity by breed
@@ -140,7 +137,6 @@ def main(config_path: str | None = None):
     ax.set_title("Observed Heterozygosity by Breed")
     fig.tight_layout()
     fig.savefig(fig_dir / "het_by_breed.png", dpi=300)
-    fig.savefig(fig_dir / "het_by_breed.pdf")
     plt.close(fig)
 
     # 5. Inbreeding F by breed
@@ -158,7 +154,6 @@ def main(config_path: str | None = None):
     ax.axhline(0, color="grey", linestyle="--", linewidth=0.8)
     fig.tight_layout()
     fig.savefig(fig_dir / "inbreeding_by_breed.png", dpi=300)
-    fig.savefig(fig_dir / "inbreeding_by_breed.pdf")
     plt.close(fig)
 
     print(f"\nQC figures saved to {fig_dir}/")
